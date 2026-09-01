@@ -1,0 +1,87 @@
+# .github/workflows/publish-npm.yml
+
+name: 📦 Publish to npm
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish (for example, 1.1.8)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish Package to npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🛎️ Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.release_tag }}
+
+      - name: 🧰 Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: ✅ Run tests
+        run: npm run test:ci
+
+      - name: 🏗️ Build package
+        run: npm run build
+
+      - name: ✍️ Add shebang to CLI entrypoint
+        run: |
+          FILE="build/src/index.js"
+          SHEBANG='#!/usr/bin/env node'
+          if ! head -n 1 "$FILE" | grep -q "$SHEBANG"; then
+            echo "Injecting shebang into $FILE"
+            (echo "$SHEBANG"; cat "$FILE") > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"
+          else
+            echo "Shebang already present."
+          fi
+
+      - name: 🔢 Set package.json version from tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-beta(\.[0-9]+)?)?$ ]]; then
+            echo "Invalid release tag"
+            exit 1
+          fi
+          VERSION=${RELEASE_TAG#v}
+          echo "Setting package.json version to $VERSION"
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Normalize package metadata
+        run: |
+          npm pkg set \
+            "repository.type=git" \
+            "repository.url=git+https://github.com/${GITHUB_REPOSITORY}.git" \
+            "bin.bring-mcp=build/src/index.js"
+          npm pkg fix
+
+      - name: 🚀 Publish to npm
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          echo "Publishing version: $RELEASE_TAG"
+          TAG="latest"
+          if [[ "$RELEASE_TAG" == *"beta"* ]]; then
+            echo "Beta release detected."
+            TAG="beta"
+          fi
+          npm publish --tag "$TAG"

@@ -1,0 +1,23 @@
+node_modules/
+.pnpm-store/
+.yarn/cache/
+.bun-install/
+dist/
+build/
+out/
+.next/                # Next.js
+.turbo/               # Turborepo
+.storybook-static/    # Storybook Build
+.svelte-kit/
+coverage/
+.nyc_output/
+docs/**/html/
+*.tmp
+*.bak
+.env*
+*.pem
+config/credentials.json
+firebase-service-account.json
+.vscode/
+.idea/
+.DS_Store

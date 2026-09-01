@@ -1,0 +1,183 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Bring! MCP Server Project Guidelines
+
+This document outlines key conventions, structures, and important points for working with the `bring-mcp` TypeScript project.
+
+## Project Overview
+
+- **Purpose**: Implements a Model Context Protocol (MCP) server that exposes the Bring! shopping list API.
+- **Language**: TypeScript
+- **Key Libraries**:
+    - `@modelcontextprotocol/sdk`: For MCP server implementation.
+    - `@modelcontextprotocol/inspector`: For testing and debugging MCP servers.
+    - `bring-shopping`: Node.js wrapper for the Bring! API.
+    - `zod`: For schema definition and validation.
+    - `dotenv`: For managing environment variables.
+    - `jest`: For testing.
+    - `eslint` & `prettier`: For linting and formatting.
+
+## Directory Structure
+
+- **`.cursor/rules/`**: Contains Cursor AI project-specific rules like this one.
+- **`src/`**: Main application source code.
+    - **`index.ts`**: Entry point, MCP server setup, `registerTool` helper function, and the `main` function which initializes `BringClient` and registers tools.
+    - **`bringClient.ts`**: A wrapper class around the `bring-shopping` library, centralizing all interactions with the Bring! API.
+    - **`schemaShared.ts`**: Defines common Zod schema parts (e.g., `listUuidParam`, `itemIdParam`, `itemNameParam`, `itemSpecificationParam`, `itemImagePathOrUrlParam`, `batchItemSchema`, `saveItemBatchParams`, `itemNamesArrayParam`) for reuse across tool schemas.
+    - **`tools/`**: Contains modularized tool registration functions.
+        - `listTools.ts`
+        - `itemTools.ts`: Includes tools like `saveItem`, `saveItemBatch`, `deleteMultipleItemsFromList`.
+        - `userTools.ts`: Includes tools like `getAllUsersFromList`, `getUserSettings`, `getPendingInvitations`, and `getDefaultList`.
+        - `catalogTools.ts`
+- **`tests/`**: Contains Jest test files (e.g., `*.spec.ts`).
+- **`.env`**: Used for storing Bring! API credentials (`MAIL`, `PW`). This file should not be committed to version control.
+- **`assets/`**: Contains static assets like images for the README.
+- **`eslint.config.js`**: ESLint configuration.
+- **`jest.config.js`**: Jest test runner configuration.
+- **`tsconfig.json`**: TypeScript compiler configuration.
+- **`package.json`**: Project metadata, dependencies, and npm scripts.
+
+## Available Tools
+
+The following tools are registered and available through the MCP server:
+
+### List Management
+- **`loadLists`**: Load all shopping lists from Bring!
+
+### Item Management
+- **`getItems`**: Get all items from a specific shopping list
+- **`getItemsDetails`**: Get details for items in a list
+- **`saveItem`**: Save an item to a shopping list with optional specification
+- **`saveItemBatch`**: Save multiple items to a shopping list in one operation
+- **`removeItem`**: Remove an item from a specific shopping list
+- **`moveToRecentList`**: Move an item to the recently used items list
+- **`deleteMultipleItemsFromList`**: Delete multiple items from a list by their names
+
+### Image Management
+- **`saveItemImage`**: Save an item image from bounded base64-encoded data
+- **`removeItemImage`**: Remove an image from an item
+
+### User Management
+- **`getAllUsersFromList`**: Get all users associated with a shopping list
+- **`getUserSettings`**: Get settings for the authenticated user
+- **`getDefaultList`**: Get the UUID of the default shopping list (use when user doesn't specify a list)
+- **`getPendingInvitations`**: Get pending invitations to join shopping lists
+
+### Catalog & Translations
+- **`loadTranslations`**: Load translations for the Bring! interface
+- **`loadCatalog`**: Load the Bring! item catalog
+
+## Tool Registration (`src/index.ts`)
+
+- A helper function `registerTool` is defined in `src/index.ts` to standardize tool registration.
+- **Overloads**: `registerTool` has overloads to support tools with Zod schemas and tools without arguments (schema is `undefined`).
+- **Parameters**:
+    - `server`: The `McpServer` instance.
+    - `bc`: The `BringClient` instance.
+    - `name`: Tool name (string).
+    - `description`: Tool description (string).
+    - `schemaShape`: (Optional) A Zod raw shape (`z.object({...}).shape`) defining the tool's input parameters.
+    - `actionFn`: An async function `(args, bc) => Promise<result>` that implements the tool's core logic. `args` are the parsed Zod parameters or `undefined`.
+    - `transformResult`: (Optional) A function `(result) => ({ content: McpContentPart[] })` to format the `actionFn`'s result into the MCP tool response structure. If not provided, the result is stringified as JSON.
+    - `failureMessage`: A string prepended to error messages if `actionFn` throws an error.
+- Tool definitions are modularized into functions within the `src/tools/` directory (e.g., `registerItemTools(server, bc)`).
+- **Note**: There is no longer a dedicated `login` tool registered here, as login is handled automatically by `BringClient`.
+
+## BringClient (`src/bringClient.ts`)
+
+- This class encapsulates all interactions with the `bring-shopping` library.
+- **Automatic Login**: `BringClient` now implements an automatic login mechanism.
+    - Login is attempted on the first API call if the client is not already authenticated.
+    - A private `_login()` method handles the actual login process with the `bring-shopping` library.
+    - An `isLoggedIn` flag tracks the current authentication status.
+    - A private `ensureLoggedIn()` method is called before each API request to ensure the user is logged in, attempting to log in if necessary.
+- **API Method Signatures**:
+    - `saveItemImage(itemUuid: string, imageData: string)`: Passes bounded base64 image data to the library.
+    - `removeItemImage(itemUuid: string)`
+    - `saveItemBatch(listUuid: string, items: Array<{ itemName: string; specification?: string }>)`: Saves multiple items to a list.
+    - `deleteMultipleItemsFromList(listUuid: string, itemNames: string[])`: Deletes multiple items from a list by their names.
+    - The image methods follow the `bring-shopping` 2.x type definitions and use item UUIDs directly.
+- **Error Handling**: The private `_login()` method in `BringClient` throws specific, user-friendly error messages for invalid credentials or connection issues. These messages are propagated by the `ensureLoggedIn` method and then by the `registerTool` helper if an API call fails due to login issues.
+- **Item Processing**: The `getItems` method automatically adds `itemId` properties to items in the response, setting `itemId` equal to the item's `name` for consistency.
+
+## Schema Definitions (`src/schemaShared.ts`)
+
+Common Zod schema definitions for reuse across tools:
+
+- **`listUuidParam`**: Validates list UUID with proper UUID format checking
+- **`itemIdParam`**: Validates item ID as a non-empty string
+- **`itemNameParam`**: Validates item names with minimum length requirement
+- **`itemSpecificationParam`**: Optional specification that can be null
+- **`itemImagePathOrUrlParam`**: Validates image paths or URLs with minimum length
+- **`batchItemSchema`**: Schema for individual items in batch operations
+- **`saveItemBatchParams`**: Combined schema for batch item saving (listUuid + items array)
+- **`itemNamesArrayParam`**: Validates arrays of item names for deletion operations
+
+## Environment Variables & Initialization
+
+- **Credentials**: `MAIL` and `PW` for Bring! authentication are required.
+- **`.env` file**: The primary way to provide credentials for local development.
+- **Initialization Order**: In `src/index.ts`, the `main()` function first checks for the presence of `MAIL` and `PW` environment variables. If they are missing, the application exits. `BringClient` instantiation (which sets up automatic login but does not log in immediately) and all tool registrations occur *after* this check.
+
+## Special Tool Behaviors
+
+### getDefaultList Tool
+- **Purpose**: Returns the UUID of the user's default shopping list
+- **Usage**: Use when the user doesn't specify a particular list
+- **Implementation**: Fetches user settings and extracts `defaultListUUID` from the `usersettings` array
+- **Error Handling**: Throws specific error if `defaultListUUID` is not found in user settings
+- **Output Format**: Returns plain text UUID (not JSON-formatted) using custom `transformResult` function
+
+### Batch Operations
+- **`saveItemBatch`**: Accepts an array of items with `itemName` and optional `specification`
+- **`deleteMultipleItemsFromList`**: Accepts an array of item names for deletion
+- Both use custom `transformResult` functions for user-friendly output formatting
+
+## Linting, Formatting, and Testing
+
+- **ESLint & Prettier**: Configured for code quality and consistency.
+  - Run formatting (and auto-fixing lint errors): `npm run test` (this also runs Jest tests)
+  - Run local formatting: `npm run format` (Prettier with --write)
+  - Run CI checks (linting and formatting, read-only): `npm run lint:ci` (Prettier with --check, ESLint without --fix)
+  - Run CI tests (includes linting, formatting checks, and Jest with coverage): `npm run test:ci`
+- **Ignoring Files**: The `build/` output directory is ignored by ESLint (configured in `eslint.config.js`).
+- **Testing**: Jest is used for running tests.
+  - Test files are located in `tests/` and typically use the `*.spec.ts` naming convention.
+  - **Authentication Tests (`tests/auth.spec.ts`)**: These tests validate the automatic login behavior of `BringClient`, including scenarios like successful login on the first API call, ensuring login is attempted only once if successful, handling failed login attempts, and retry logic. Tests for a dedicated `login` tool have been removed.
+  - **User Tools Tests (`tests/users.spec.ts`)**: Include comprehensive tests for `getDefaultList` tool, validating both successful UUID retrieval and error handling for missing or invalid user settings.
+  - **Test Helpers (`tests/helpers.ts`)**: The mock `login` function has been removed. The `getTool` helper function now returns `McpTool | undefined` to reflect that a tool might not be found.
+  - **Robust Test Practices**: When testing tool functionality, always check if the tool was successfully retrieved before attempting to execute its callback (e.g., `const tool = getTool('myTool'); if (!tool) throw new Error('Tool not found'); tool.callback(...)`). This prevents runtime errors if a tool is unexpectedly missing.
+  - Run all local tests (including auto-formatting and auto-lint-fixing): `npm run test`
+  - Run tests with coverage for CI: `npm run test:ci` (uses `jest --coverage`)
+- **Coverage Reporting**: Test coverage is measured using Jest's `--coverage` option. The `test:ci` script generates a coverage report.
+
+## General Coding Conventions & Best Practices
+
+- **Modularity**: Group related tools into their own files within `src/tools/`.
+- **Schema Reusability**: Utilize common Zod schema definitions from `src/schemaShared.ts` for parameters like `listUuid`, `itemId`, `itemNameParam`, `itemSpecificationParam`, `itemImagePathOrUrlParam`, `batchItemSchema`, `saveItemBatchParams`, and `itemNamesArrayParam`.
+- **Type Safety**: Use TypeScript effectively. Employ `any` sparingly and only when necessary (e.g., in the implementation signature of overloaded functions where overloads provide strict typing, or when dealing with external library type issues using `@ts-expect-error` with justification).
+- **Clarity**: Ensure comments explain non-obvious logic, especially regarding external library interactions or workarounds (like `@ts-expect-error`).
+- **Robustness**: Check for necessary preconditions, such as environment variables, before initializing dependent parts of the application.
+- **Custom Result Formatting**: Use `transformResult` functions when tools need specific output formatting (e.g., plain text instead of JSON).
+
+## Integration Test Expectations
+
+The integration tests (`tests/integration.spec.ts`) expect exactly 16 tools to be registered:
+`loadLists`, `getItems`, `getItemsDetails`, `saveItem`, `saveItemBatch`, `removeItem`, `moveToRecentList`, `saveItemImage`, `removeItemImage`, `getAllUsersFromList`, `getUserSettings`, `loadTranslations`, `loadCatalog`, `getPendingInvitations`, `deleteMultipleItemsFromList`, `getDefaultList`
+
+When adding new tools, update the `expectedToolNames` array in the integration tests.
+
+By following these guidelines, the AI should be able to assist more effectively with code generation, refactoring, and understanding the project's structure and conventions.
+
+## Development Rules (Cursor AI Enforcement)
+	•	Before a task is marked as done, the following must always be verified:
+	1.	`npm run test` must run without any errors or failed assertions.
+	2.	`npm run build` must complete successfully.
+	3.	These two commands must be executed before any confirmation or response like "Done", "Ready", or similar is given.
+	•	Test coverage requirement:
+	•	Every new feature or tool must come with at least one meaningful Jest test case.
+	•	If a feature is too trivial for a test (rare), this must be justified in a code comment.
+	•	Tasks that do not meet these requirements are to be considered incomplete.
