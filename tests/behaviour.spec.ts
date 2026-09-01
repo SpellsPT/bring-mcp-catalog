@@ -973,6 +973,37 @@ describe('read amplification', () => {
   });
 });
 
+describe('findCatalogItem fallback', () => {
+  /** A bare [] tells an agent nothing, so it invents another spelling and loops.
+   *  Observed live: one session made 20 searches, five returning [], with the
+   *  model burning ~16s between bursts while the server answered in 20ms. */
+  it('returns spelling-nearest suggestions when nothing scores', async () => {
+    const bc = new BringClient();
+    const near = await bc.findCatalogItem('milhc'); // transposed "Milch"
+    expect(near.length).toBeGreaterThan(0);
+    expect(near[0].itemId).toBe('Milch');
+    expect(near[0].score).toBe(0);
+    expect(near[0].nearest).toBe(true);
+  });
+
+  it('still returns real matches unflagged when something does score', async () => {
+    const bc = new BringClient();
+    const hit = await bc.findCatalogItem('maçãs');
+    expect(hit[0].itemId).toBe('Äpfel');
+    expect(hit[0].nearest).toBeUndefined();
+  });
+
+  /** The suggestions must never reach a write. */
+  it('never lets a nearest suggestion be stored or attached', async () => {
+    mockGetItems.mockResolvedValue({ purchase: [], recently: [] });
+    const bc = new BringClient();
+    const result = await bc.saveItemResolved(LIST, 'milhc');
+    expect(result.mode).toBe('text-only');
+    expect(result.storedAs).toBe('milhc');
+    expect(result.resolved).toBeNull();
+  });
+});
+
 describe('catalog cache', () => {
   /** One slot meant a non-default locale evicted the default set, so the two
    *  thrashed and every alternating call refetched 3-4 full catalogs despite

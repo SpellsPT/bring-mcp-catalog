@@ -41,6 +41,11 @@ export type Match = {
   matchedOn: string;
   /** True when the score came from the plural-suffix upgrade (weakest 65 tier). */
   viaInflection?: boolean;
+  /**
+   * True when this is a spelling-nearest suggestion returned because nothing
+   * scored at all. Always accompanied by `score: 0` and NEVER attachable.
+   */
+  nearest?: boolean;
 };
 
 /**
@@ -148,6 +153,50 @@ const LETTER_FOLDINGS: [RegExp, string][] = [
   [/ŧ/g, 't'],
 ];
 
+/**
+ * European Portuguese -> Brazilian Portuguese term aliases.
+ *
+ * Bring publishes a `pt-BR` catalog and NO `pt-PT`, so a shopper in Portugal
+ * types words the catalog has never heard of. This is not a preference, it is a
+ * gap in the source data: `sumo` (juice) simply does not appear anywhere in
+ * Bring's index, while `suco` resolves fine.
+ *
+ * Every entry below was MEASURED against the live catalog, not guessed. Each one
+ * either fails outright as pt-PT and succeeds as pt-BR, or - in the case of
+ * `gelado` - resolves to the WRONG product: it matched `Eistee` (iced TEA) at 65
+ * before, and `sorvete` gives `Glacé` at 100. Terms that already work in pt-PT
+ * (ananás, queijo, manteiga, iogurte, papel higiénico) are deliberately absent,
+ * and so is anything where the pt-PT form scored HIGHER (bolacha -> Kräcker 65
+ * beats biscoito -> Kekse 55).
+ *
+ * Applied as an ADDITIONAL query form, never a replacement: the original wording
+ * is still scored, and the better of the two wins. So adding an alias can only
+ * improve a result, never take one away.
+ */
+const PT_PT_ALIASES: Record<string, string> = {
+  sumo: 'suco',
+  gelado: 'sorvete',
+  fiambre: 'presunto',
+  brocolos: 'brocolis',
+  courgette: 'abobrinha',
+  beringela: 'berinjela',
+};
+
+/**
+ * Rewrite known pt-PT words in an already-normalized query. Returns the input
+ * unchanged when nothing matches, so callers can cheaply skip the second pass.
+ */
+export function applyLocaleAliases(normalizedQuery: string): string {
+  const words = normalizedQuery.split(' ');
+  let changed = false;
+  const out = words.map((w) => {
+    const alias = PT_PT_ALIASES[w];
+    if (alias) changed = true;
+    return alias ?? w;
+  });
+  return changed ? out.join(' ') : normalizedQuery;
+}
+
 /** Lowercase, fold accents and punctuation, collapse whitespace. */
 export function normalize(value: string): string {
   let folded = value.toLowerCase();
@@ -223,6 +272,21 @@ const INFLECTION_SUFFIXES = new Set(['n', 'en', 's', 'ns']);
 
 const tokens = (value: string): string[] => (value ? value.split(' ') : []);
 
+/**
+ * Genitive particles, dropped when comparing a query to a candidate as one
+ * word. Deliberately excludes "com" and "sem" - those change the meaning, and
+ * dropping "sem" would let "sumo sem açúcar" match sugar.
+ */
+const PARTICLES = new Set(['de', 'da', 'do', 'dos', 'das', 'of']);
+
+/** Normalized text with spaces and genitive particles removed. */
+function compact(value: string): string {
+  return value
+    .split(' ')
+    .filter((w) => w && !PARTICLES.has(w))
+    .join('');
+}
+
 /** True when `needle`'s tokens appear as a contiguous run inside `haystack`'s. */
 function containsRun(haystack: string[], needle: string[]): boolean {
   if (needle.length === 0 || needle.length > haystack.length) return false;
@@ -250,9 +314,15 @@ function scoreCandidate(query: string, candidate: string): { score: number; viaI
   // the whole-token run rule while the REAL product scored 0 and never appeared
   // in results at all - a confidently wrong icon plus a total miss of the item
   // the user asked for. German catalog ids store compounds as a single token
-  // ("Weisswein", "Erdnussbutter"), so every spaced compound hit this. Found by
-  // DeepSeek Flash.
-  if (query.replace(/ /g, '') === candidate.replace(/ /g, '')) return { score: 100 };
+  // ("Weisswein", "Erdnussbutter"), so every spaced compound hit this.
+  //
+  // Genitive particles are ignored on BOTH sides for the same reason: people
+  // drop them. "sumo maçã" is how a real list entry is written, and it could
+  // never reach "Suco de maçã" while that "de" had to be present. Only the
+  // semantically empty connectors are stripped - de/da/do/dos/das/of. NOT
+  // "com"/"sem", because those carry meaning and dropping "sem" would turn
+  // "sumo sem açúcar" (sugar-FREE juice) into a match for sugar.
+  if (compact(query) && compact(query) === compact(candidate)) return { score: 100 };
 
   const q = tokens(query);
   const c = tokens(candidate);
@@ -353,6 +423,11 @@ export function buildCatalog(
 /** Ranked matches, best first. Empty when nothing clears the confidence bar. */
 export function resolveItem(catalog: Catalog, query: string, limit = 5): Match[] {
   const normalizedQuery = normalize(query);
+  // A pt-PT query is scored BOTH as typed and with its pt-BR aliases applied,
+  // and the better score wins - so an alias can only ever help. The second form
+  // is skipped entirely when no alias fired, which is the overwhelming majority.
+  const aliased = applyLocaleAliases(normalizedQuery);
+  const queryForms = aliased === normalizedQuery ? [normalizedQuery] : [normalizedQuery, aliased];
   const results: Match[] = [];
 
   for (const entry of catalog.entries.values()) {
@@ -364,9 +439,12 @@ export function resolveItem(catalog: Catalog, query: string, limit = 5): Match[]
     }
 
     for (const [label, text] of candidates) {
-      const scored = scoreCandidate(normalizedQuery, normalize(text));
-      if (scored && (!best || scored.score > best.score)) {
-        best = { score: scored.score, matchedOn: `${label}:${text}`, viaInflection: scored.viaInflection };
+      const normalizedText = normalize(text);
+      for (const form of queryForms) {
+        const scored = scoreCandidate(form, normalizedText);
+        if (scored && (!best || scored.score > best.score)) {
+          best = { score: scored.score, matchedOn: `${label}:${text}`, viaInflection: scored.viaInflection };
+        }
       }
     }
 
@@ -384,6 +462,66 @@ export function resolveItem(catalog: Catalog, query: string, limit = 5): Match[]
 
   results.sort((a, b) => b.score - a.score || a.itemId.localeCompare(b.itemId));
   return results.slice(0, limit);
+}
+
+/**
+ * Nearest catalog entries by raw spelling, for when scoring finds NOTHING.
+ *
+ * An empty result gives an agent no signal at all, so it guesses another
+ * spelling, gets nothing again, and loops. Observed on this box: a garbled
+ * voice transcription produced 20 findCatalogItem calls in one session, five of
+ * them returning `[]`, with the model burning ~16s of reasoning between bursts
+ * while the server answered every call in 20ms. The searching was never slow;
+ * the agent was flying blind.
+ *
+ * These are ranked by trigram overlap, carry `score: 0` and `nearest: true`,
+ * and exist ONLY to let a caller say "closest things are X, Y, Z - none of them
+ * confident" and then ask a human. They are deliberately NOT wired into
+ * `resolveItem`, so `toCanonicalItemId` and every write path cannot see them:
+ * a score of 0 could never clear a confidence bar anyway, but keeping them out
+ * of the shared path means that is structurally true rather than merely true
+ * today.
+ */
+export function nearestItems(catalog: Catalog, query: string, limit = 3): Match[] {
+  const q = trigrams(normalize(query));
+  if (q.size === 0) return [];
+  const scored: { entry: CatalogEntry; sim: number; matchedOn: string }[] = [];
+  for (const entry of catalog.entries.values()) {
+    let best = 0;
+    let bestOn = entry.itemId;
+    for (const [label, text] of [['itemId', entry.itemId] as const, ...Object.entries(entry.names)]) {
+      const sim = jaccard(q, trigrams(normalize(text)));
+      if (sim > best) {
+        best = sim;
+        bestOn = `${label}:${text}`;
+      }
+    }
+    // Below this the "nearest" entries are noise and would mislead rather than help.
+    if (best >= 0.2) scored.push({ entry, sim: best, matchedOn: bestOn });
+  }
+  scored.sort((a, b) => b.sim - a.sim || a.entry.itemId.localeCompare(b.entry.itemId));
+  return scored.slice(0, limit).map(({ entry, matchedOn }) => ({
+    itemId: entry.itemId,
+    sectionId: entry.sectionId,
+    names: entry.names,
+    score: 0,
+    matchedOn,
+    nearest: true,
+  }));
+}
+
+function trigrams(value: string): Set<string> {
+  const padded = ` ${value.replace(/ /g, '')} `;
+  const out = new Set<string>();
+  for (let i = 0; i + 3 <= padded.length; i++) out.add(padded.slice(i, i + 3));
+  return out;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const g of a) if (b.has(g)) shared++;
+  return shared / (a.size + b.size - shared);
 }
 
 export type SectionMatch = CatalogSection & { score: number };

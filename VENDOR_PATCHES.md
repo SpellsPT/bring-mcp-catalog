@@ -109,6 +109,15 @@ enough to borrow an icon from" are different questions:
 
 Nothing here is household-specific, and the capability exists nowhere else. This
 is a reasonable pull request to `florianwittkamp/bring-mcp`; if accepted, the
-fork can be retired. The only opinionated default is
-`DEFAULT_CATALOG_LOCALES = ['de-DE', 'pt-BR', 'en-US']`, which should become
-configurable before proposing it.
+fork can be retired.
+
+The locale default that used to be opinionated is now configuration:
+`BRING_MCP_CATALOG_LOCALES`, defaulting to `de-DE,en-US`. `de-DE` is forced in
+regardless, because Bring's canonical ids ARE the German names.
+
+One change is worth offering upstream on its own, independently of everything
+else here, because it affects every user of the underlying `bring-shopping`
+package: that library builds its request bodies by string concatenation with no
+escaping, so `Fish & Chips` is silently stored as `Fish` and `50% Cream` never
+arrives at all. The fix is small and self-contained - route the legacy list
+mutation through a properly encoded form body and check the response status.

@@ -1,6 +1,7 @@
 import {
   assertSupportedLocale,
   buildCatalog,
+  nearestItems,
   normalize,
   resolveItem,
   resolveSection,
@@ -339,6 +340,47 @@ describe('resolveItem', () => {
     expect(best?.score).toBe(70); // 1 of 2 tokens = exactly the 0.5 floor
   });
 
+  /** Bring publishes pt-BR and NO pt-PT, so the words a shopper in Portugal
+   *  actually uses are absent from the index. Measured on the live catalog:
+   *  "sumo" found nothing while "suco" resolved, and "gelado" resolved to the
+   *  WRONG product (Eistee, iced tea) where "sorvete" gives ice cream. */
+  it('resolves a European Portuguese term via its Brazilian alias', () => {
+    const catalog = buildCatalog([
+      {
+        locale: 'pt-BR',
+        sections: [{ sectionId: 'S', name: 'S', items: [{ itemId: 'Apfelsaft', name: 'Suco de maçã' }] }],
+      },
+    ]);
+    // "sumo" does not appear anywhere in a pt-BR catalog
+    expect(resolveItem(catalog, 'sumo de maçã', 1)[0]?.itemId).toBe('Apfelsaft');
+  });
+
+  /** People drop the genitive particle. "sumo maçã" is how a real list entry is
+   *  written and could never reach "Suco de maçã" while the "de" was required. */
+  it('ignores a dropped genitive particle', () => {
+    const catalog = buildCatalog([
+      {
+        locale: 'pt-BR',
+        sections: [{ sectionId: 'S', name: 'S', items: [{ itemId: 'Apfelsaft', name: 'Suco de maçã' }] }],
+      },
+    ]);
+    const [best] = resolveItem(catalog, 'sumo maçã', 1);
+    expect(best?.itemId).toBe('Apfelsaft');
+    expect(best?.score).toBe(100);
+  });
+
+  /** ...but "com"/"sem" carry meaning and must NOT be dropped, or sugar-free
+   *  juice would match sugar - the exact inversion the coverage floor blocks. */
+  it('does not drop meaning-bearing connectors like sem', () => {
+    const catalog = buildCatalog([
+      {
+        locale: 'pt-BR',
+        sections: [{ sectionId: 'S', name: 'S', items: [{ itemId: 'Zucker', name: 'Açúcar' }] }],
+      },
+    ]);
+    expect(resolveItem(catalog, 'sumo sem açúcar', 1)).toEqual([]);
+  });
+
   it('matches a spaced compound to the single-token catalog entry', () => {
     const catalog = buildCatalog([
       {
@@ -358,6 +400,28 @@ describe('resolveItem', () => {
     const [best] = resolveItem(catalog, 'apfel strudel', 1);
     expect(best.itemId).toBe('Apfelstrudel');
     expect(best.score).toBe(100);
+  });
+});
+
+describe('nearestItems', () => {
+  /** An empty result gives an agent nothing to reason about, so it guesses
+   *  another spelling and loops. These suggestions exist to break that loop. */
+  it('offers spelling-nearest entries and marks them unattachable', () => {
+    const catalog = fixture();
+    const near = nearestItems(catalog, 'zwibeln', 3); // misspelt Zwiebeln
+    expect(near.length).toBeGreaterThan(0);
+    expect(near[0].itemId).toBe('Zwiebeln');
+    expect(near[0].score).toBe(0);
+    expect(near[0].nearest).toBe(true);
+  });
+
+  it('returns nothing rather than noise for a query with no neighbourhood', () => {
+    expect(nearestItems(fixture(), 'xqzwvk', 3)).toEqual([]);
+  });
+
+  /** The write path must be structurally unable to see these. */
+  it('is not reachable through resolveItem', () => {
+    expect(resolveItem(fixture(), 'zwibeln', 3).every((m) => !m.nearest)).toBe(true);
   });
 });
 

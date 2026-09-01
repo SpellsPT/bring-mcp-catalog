@@ -36,7 +36,10 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
       "Search Bring's item catalog in any supported language and return canonical item ids, ranked by " +
       'score. Use this to discover the correct itemId before calling saveItemResolved or setItemIcon. ' +
       'Scores below 50 are weak hints and are never applied automatically; only a confident, untied ' +
-      'match is ever auto-attached by the other tools.',
+      'match is ever auto-attached by the other tools. If NOTHING scores, you get up to 3 entries ' +
+      'marked "nearest": true with score 0 - these are the closest catalog entries by spelling, are ' +
+      'never attachable, and mean "no real match, here is the neighbourhood". Do not keep guessing ' +
+      'new spellings against them; ask the user which they meant, or say you could not find it.',
     schemaShape: findCatalogItemParams.shape,
     actionFn: async (args: z.infer<typeof findCatalogItemParams>, bc: BringClient) =>
       bc.findCatalogItem(args.query, args.limit ?? 5),

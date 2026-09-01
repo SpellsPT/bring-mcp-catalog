@@ -14,6 +14,7 @@ import {
   buildCatalog,
   catalogLocales,
   describeLocale,
+  nearestItems,
   normalize,
   PERMUTATION_SCORE,
   resolveItem,
@@ -425,7 +426,13 @@ export class BringClient {
 
   async findCatalogItem(query: string, limit = 5): Promise<Match[]> {
     const catalog = await this.getCatalog();
-    return resolveItem(catalog, query, limit);
+    const matches = resolveItem(catalog, query, limit);
+    if (matches.length > 0) return matches;
+    // Nothing scored. Rather than hand back a bare [] - which tells a caller
+    // nothing and invites it to guess another spelling and try again - offer the
+    // spelling-nearest entries, flagged `nearest` with score 0 so they can never
+    // be mistaken for a match. Search only; no write path sees these.
+    return nearestItems(catalog, query, Math.min(limit, 3));
   }
 
   async findCatalogSection(query: string, limit = 5): Promise<SectionMatch[]> {
