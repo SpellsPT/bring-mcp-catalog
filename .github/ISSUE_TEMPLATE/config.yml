@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Upstream bring-mcp
+    url: https://github.com/florianwittkamp/bring-mcp
+    about: This project is a derivative work. If your issue is not about catalog resolution, icons or locales, it may belong upstream.

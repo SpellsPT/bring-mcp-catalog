@@ -1,0 +1,40 @@
+name: Bug report
+description: Something did not behave the way you expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please redact anything from your shopping list you would rather not publish.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you typed, what you expected, and what came back. Raw tool output helps.
+      placeholder: |
+        Query: "sumo maçã"
+        Expected: Apfelsaft
+        Got: []
+    validations: { required: true }
+  - type: input
+    id: locales
+    attributes:
+      label: BRING_MCP_CATALOG_LOCALES
+      description: The value you have set. Leave blank if unset (the default is de-DE,en-US).
+      placeholder: de-DE,pt-BR,en-US
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.2.0
+    validations: { required: true }
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: Claude Desktop 1.x / Hermes / MCP Inspector
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Node version, OS, or whether it ever worked before.

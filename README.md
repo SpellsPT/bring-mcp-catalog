@@ -19,6 +19,8 @@ indexed languages, and saves the canonical id when it is confident enough.
 
 ---
 
+**[Changelog](CHANGELOG.md)** · **[Contributing](CONTRIBUTING.md)** · **[Security](SECURITY.md)** · **[Releases](https://github.com/SpellsPT/bring-mcp-catalog/releases)**
+
 ## ⚠️ Status, and please read this bit
 
 **This was vibe-coded. Use it entirely at your own risk.**

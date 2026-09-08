@@ -64,7 +64,12 @@ jobs:
           fi
           VERSION=${RELEASE_TAG#v}
           echo "Setting package.json version to $VERSION"
-          npm version "$VERSION" --no-git-tag-version
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "$CURRENT" = "$VERSION" ]; then
+            echo "package.json is already $VERSION — nothing to set."
+          else
+            npm version "$VERSION" --no-git-tag-version
+          fi
 
       - name: Normalize package metadata
         run: |
