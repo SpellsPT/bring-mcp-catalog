@@ -39,7 +39,7 @@ accepted that by running it. This is the standard MIT position (see `LICENSE`),
 stated plainly so nobody is surprised by it.
 
 In fairness, the code has been through a fair amount of adversarial review and
-carries 201 tests — but "reviewed a lot" is not "safe", and none of that changes
+carries 200+ tests — but "reviewed a lot" is not "safe", and none of that changes
 a word of the paragraph above. **Try it on a list you do not care about first.**
 
 Issues and pull requests are welcome, and I read them when I can. That is not a
@@ -80,26 +80,51 @@ Everything from the original is still present and still works.
 
 ---
 
-## 🧩 Recommended Claude Desktop Configuration
+## 📦 Install
 
-To use this server in Claude Desktop via `npx`, insert the following into your `claude_desktop_config.json` file:
+This project is not on npm. Install it from GitHub — it takes a minute:
+
+```bash
+git clone https://github.com/SpellsPT/bring-mcp-catalog.git
+cd bring-mcp-catalog
+npm ci
+npm run build
+cp .env.example .env
+chmod 600 .env        # it holds your Bring! password
+```
+
+Then edit `.env`:
+
+```env
+BRING_EMAIL=your_email@example.com
+BRING_PASSWORD=your_password
+BRING_MCP_CATALOG_LOCALES=de-DE,en-US   # see "Configure your languages" below
+```
+
+The server reads `.env` from its own install directory, so it works no matter
+which directory your MCP client starts it from. Anything your client passes in
+its own `env` block takes precedence over the file. To keep the file somewhere
+else, point `BRING_MCP_ENV_FILE` at it.
+
+Now add it to your MCP client. For Claude Desktop, in `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "bring-mcp-catalog": {
-      "command": "npx",
-      "args": ["-y", "bring-mcp-catalog@latest"],
-      "env": {
-        "MAIL": "your_bring_email@example.com",
-        "PW": "YOUR_BRING_PASSWORD_HERE"
-      }
+    "bring": {
+      "command": "node",
+      "args": ["/ABSOLUTE/PATH/TO/bring-mcp-catalog/build/src/index.js"]
     }
   }
 }
 ```
 
-This is the recommended and most portable configuration. It ensures you always use the latest version published to npm without needing local installation.
+Any MCP client that can launch a stdio server works the same way: the command is
+`node /ABSOLUTE/PATH/TO/bring-mcp-catalog/build/src/index.js`.
+
+**Updating:** `git pull && npm ci && npm run build`, then restart your MCP client.
+
+> `MAIL` and `PW`, the variable names older versions used, are still accepted.
 
 ---
 
@@ -116,6 +141,8 @@ This is the recommended and most portable configuration. It ensures you always u
   - 🌐 Load translations & catalog
   - 📨 Retrieve pending invitations
 - Communicates via STDIO (for use with Claude Desktop or MCP Inspector)
+- Every tool declares its input and output schema and read-only / destructive hints
+  (MCP SDK v2), and returns structured results alongside a readable text summary
 - Supports Bring! credentials via `.env` file or injected environment variables
 
 ### Available Tools
@@ -154,7 +181,8 @@ This is the recommended and most portable configuration. It ensures you always u
 - **`batchUpdateItems`** — mixed add / mark-bought / remove in one call.
 - **`setListArticleLanguage`** — which language the list renders in.
 - **`bringApiRaw`** — an escape hatch onto the raw API for probing undocumented
-  endpoints. Off unless `BRING_MCP_RAW=1`; read-only verbs by default.
+  endpoints. Off unless `BRING_MCP_RAW=1`, and when on it allows every verb,
+  including DELETE — enable it only while exploring, never on an assistant.
 
 ---
 
@@ -180,84 +208,19 @@ that is not German.
 
 ---
 
-## ⚙️ Setup and Installation
+## 🏃 Running and debugging
 
-1. **Clone the repo (or obtain the files)**
-
-2. **Navigate into the project directory:**
-
-   ```bash
-   cd path/to/bring-mcp
-   ```
-
-3. **Install dependencies:**
-
-   ```bash
-   npm install
-   ```
-
-4. **Create `.env` file (if not injecting ENV directly):**
-
-   ```env
-   MAIL=your_email@example.com
-   PW=your_password
-   ```
-
-5. **Build the project:**
-
-   ```bash
-   npm run build
-   ```
-
-6. **Make script executable (optional on Unix):**
-
-   ```bash
-   chmod +x build/src/index.js
-   ```
-
----
-
-## 🏃 Running the Server
-
-Launch the MCP server with:
+Start it by hand to check your credentials:
 
 ```bash
 node build/src/index.js
 ```
 
-If successful, you'll see: `MCP server for Bring! API is running on STDIO` (on `stderr`).
+It prints `MCP server for Bring! API v<version> is running on STDIO` on `stderr` and
+waits for a client. To poke at the tools interactively, use the MCP Inspector:
 
----
-
-## 🧪 Testing with MCP Inspector
-
-1. Ensure `npm run build` has been executed.
-2. Ensure `.env` with valid credentials exists.
-3. Run Inspector:
-
-   ```bash
-   npx @modelcontextprotocol/inspector node /ABS/PATH/bring-mcp-catalog/build/src/index.js
-   ```
-
----
-
-## 🧩 Claude Desktop Integration (Manual Local Setup)
-
-Alternatively, if you prefer a locally built and installed version:
-
-```json
-{
-  "mcpServers": {
-    "mcp-bring": {
-      "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/bring-mcp-catalog/build/src/index.js"],
-      "env": {
-        "MAIL": "your_bring_email@example.com",
-        "PW": "YOUR_BRING_PASSWORD_HERE"
-      }
-    }
-  }
-}
+```bash
+npx @modelcontextprotocol/inspector node /ABS/PATH/bring-mcp-catalog/build/src/index.js
 ```
 
 ---
@@ -290,7 +253,7 @@ npm run build
 
 ### Key Dependencies and Tools
 
-- `@modelcontextprotocol/sdk`: For MCP server implementation
+- `@modelcontextprotocol/server` (MCP SDK v2): the MCP server implementation
 - `@modelcontextprotocol/inspector`: Run on demand with `npx` for testing and debugging MCP servers
 - `bring-shopping`: Node.js wrapper for the Bring! API
 - `zod`: For schema definition and validation

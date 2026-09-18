@@ -2,9 +2,10 @@
 
 name: 📦 Publish to npm
 
+# Manual only: this package is not published to npm (install is from GitHub, see
+# the README). Creating a GitHub release used to trigger this and fail for want of
+# npm credentials. Run it by hand if npm publishing is ever set up.
 on:
-  release:
-    types: [created]
   workflow_dispatch:
     inputs:
       release_tag:

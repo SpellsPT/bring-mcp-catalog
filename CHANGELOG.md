@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-09-18
+
+### Changed
+
+- **Rebased onto the original project's MCP SDK v2 release.** The server now runs on
+  `@modelcontextprotocol/server` 2.x, following florianwittkamp/bring-mcp. Every tool
+  declares an input schema, an output schema, a title and read-only / destructive hints,
+  and returns structured results alongside the readable text summary. All 26 tools were
+  moved across; the catalog, icon and section tools keep their exact wording and behaviour.
+- **Credentials are `BRING_EMAIL` / `BRING_PASSWORD`**, matching the original project.
+  `MAIL` / `PW` still work.
+- **`deleteMultipleItemsFromList`** structured result gains `notFound`, and `count` /
+  `itemNames` now describe what was actually removed, not what was asked for.
+- **`getDefaultList`** returns a structured result instead of an error when no list can
+  be chosen. It still ignores a stored default pointing at a list the account has left,
+  and when several lists exist it names them so the assistant can ask which one.
+
+### Fixed
+
+- **`.env` next to the install is now found** regardless of the directory the MCP client
+  starts the server from. Previously only the working directory was searched, so a
+  correctly placed `.env` was silently ignored. `BRING_MCP_ENV_FILE` points elsewhere.
+- **`getAllUsersFromList` failed outright when any list member had no profile photo.**
+  Bring! omits `photoPath` for such members and the strict v2 output schema rejected the
+  whole response. Fields Bring! may leave out are now optional.
+- **README install instructions**: the recommended `npx bring-mcp-catalog` setup could
+  never work — the package is not published to npm. Replaced with a clone-and-build install.
+
 ## [0.2.0] — 2026-09-08
 
 ### Added

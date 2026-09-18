@@ -1,132 +1,55 @@
 #!/usr/bin/env node
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z, ZodRawShape, ZodObject } from 'zod';
+import './loadEnv.js';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { BringClient } from './bringClient.js';
-import 'dotenv/config';
+import { readPackageVersion } from './packageInfo.js';
+import { createBringServer } from './server.js';
 
-import { registerListTools } from './tools/listTools.js';
-import { registerItemTools } from './tools/itemTools.js';
-import { registerUserTools } from './tools/userTools.js';
-import { registerCatalogTools } from './tools/catalogTools.js';
-import { registerIconTools } from './tools/iconTools.js';
+export type BringCredentials = {
+  email: string;
+  password: string;
+  usesLegacyNames: boolean;
+};
 
-const server = new McpServer({
-  name: 'bring',
-  version: '1.0.0',
-});
+export function resolveCredentials(environment: NodeJS.ProcessEnv = process.env): BringCredentials {
+  const email = environment.BRING_EMAIL ?? environment.MAIL;
+  const password = environment.BRING_PASSWORD ?? environment.PW;
 
-// const bc = new BringClient(); // Moved into main
-
-// Define a type for content parts
-type McpContentPart = { type: 'text'; text: string; [key: string]: unknown };
-
-/**
- * A failed tool call must be flagged as such, not just described in prose.
- *
- * Without `isError`, MCP hands the caller a normal success-shaped result whose
- * text happens to begin "Failed to ...". Anything that branches on result shape
- * rather than reading the text - a retry loop, a batch driver - treats the
- * write as having happened. On a shared shopping list that turns one failure
- * into duplicated items.
- */
-function errorToolResult(text: string) {
-  const contentPart: McpContentPart = { type: 'text', text };
-  return { content: [contentPart], isError: true };
-}
-
-// Helper function to create a JSON response (as stringified text)
-function jsonToolResult(data: unknown) {
-  const contentPart: McpContentPart = { type: 'text', text: JSON.stringify(data, null, 2) };
-  return { content: [contentPart] };
-}
-
-// Generic tool registration helper - Overloads
-export function registerTool<TParams extends ZodRawShape, TResult, TArgs = z.infer<ZodObject<TParams>>>(options: {
-  server: McpServer;
-  bc: BringClient;
-  name: string;
-  description: string;
-  schemaShape: TParams; // Non-optional for this overload
-  actionFn: (args: TArgs, bc: BringClient) => Promise<TResult>;
-  transformResult?: (result: TResult) => { content: McpContentPart[] };
-  failureMessage: string;
-}): void;
-export function registerTool<TResult>(options: {
-  server: McpServer;
-  bc: BringClient;
-  name: string;
-  description: string;
-  schemaShape?: undefined; // Schema is undefined for this overload
-  actionFn: (args: undefined, bc: BringClient) => Promise<TResult>; // Args are undefined
-  transformResult?: (result: TResult) => { content: McpContentPart[] };
-  failureMessage: string;
-}): void;
-// Implementation signature for registerTool
-export function registerTool(options: {
-  server: McpServer;
-  bc: BringClient;
-  name: string;
-  description: string;
-  schemaShape?: ZodRawShape;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  actionFn: (args: any, bc: BringClient) => Promise<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  transformResult?: (result: any) => { content: McpContentPart[] };
-  failureMessage: string;
-}) {
-  const { server, bc, name, description, schemaShape, actionFn, transformResult, failureMessage } = options;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const callback = async (args: any) => {
-    try {
-      const res = await actionFn(args, bc);
-      if (transformResult) {
-        return transformResult(res);
-      }
-      return jsonToolResult(res);
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`${failureMessage}:`, error);
-      return errorToolResult(`${failureMessage}: ${errorMessage}`);
-    }
-  };
-
-  if (schemaShape) {
-    server.tool(name, description, schemaShape, callback);
-  } else {
-    server.tool(name, description, {}, callback);
-  }
-}
-
-// Register login tool and other tools moved into main
-
-// Start the server
-async function main() {
-  if (!process.env.MAIL || !process.env.PW) {
-    console.error(
-      'Missing MAIL or PW environment variables. Please create a .env file with your Bring credentials (e.g., MAIL=your_email@example.com\nPW=your_password).',
+  if (!email || !password) {
+    throw new Error(
+      'Missing BRING_EMAIL or BRING_PASSWORD environment variables. Please provide your Bring! credentials through the environment or a .env file.',
     );
-    process.exit(1);
-    return;
   }
 
-  const bc = new BringClient(); // Instantiated after env check
-
-  // Register tools from modules
-  registerListTools(server, bc);
-  registerItemTools(server, bc);
-  registerUserTools(server, bc);
-  registerCatalogTools(server, bc);
-  registerIconTools(server, bc);
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error('MCP server for Bring! API is running on STDIO');
+  return {
+    email,
+    password,
+    usesLegacyNames: !environment.BRING_EMAIL || !environment.BRING_PASSWORD,
+  };
 }
 
-main().catch((e) => {
-  console.error('Fatal error starting MCP server:', e);
-  process.exit(1);
-});
+export function main(): void {
+  const credentials = resolveCredentials();
+  if (credentials.usesLegacyNames) {
+    console.error(
+      'Deprecation warning: MAIL and PW are legacy aliases. Please migrate to BRING_EMAIL and BRING_PASSWORD.',
+    );
+  }
+
+  const version = readPackageVersion();
+  serveStdio(() => createBringServer(new BringClient(credentials.email, credentials.password), version), {
+    legacy: 'serve',
+    onerror: (error) => console.error('MCP transport error:', error),
+  });
+  console.error(`MCP server for Bring! API v${version} is running on STDIO`);
+}
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error('Fatal error starting MCP server:', error);
+    process.exitCode = 1;
+  }
+}

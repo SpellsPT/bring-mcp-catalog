@@ -12,7 +12,7 @@ This document outlines key conventions, structures, and important points for wor
 - **Purpose**: Implements a Model Context Protocol (MCP) server that exposes the Bring! shopping list API.
 - **Language**: TypeScript
 - **Key Libraries**:
-    - `@modelcontextprotocol/sdk`: For MCP server implementation.
+    - `@modelcontextprotocol/server` (MCP SDK v2): For MCP server implementation.
     - `@modelcontextprotocol/inspector`: For testing and debugging MCP servers.
     - `bring-shopping`: Node.js wrapper for the Bring! API.
     - `zod`: For schema definition and validation.
@@ -24,7 +24,9 @@ This document outlines key conventions, structures, and important points for wor
 
 - **`.cursor/rules/`**: Contains Cursor AI project-specific rules like this one.
 - **`src/`**: Main application source code.
-    - **`index.ts`**: Entry point, MCP server setup, `registerTool` helper function, and the `main` function which initializes `BringClient` and registers tools.
+    - **`index.ts`**: Entry point: loads `.env`, resolves credentials, starts the stdio transport.
+    - **`server.ts`**: Builds the MCP server and registers all tool groups.
+    - **`registerTool.ts`**: The `registerTool` helper every tool goes through.
     - **`bringClient.ts`**: A wrapper class around the `bring-shopping` library, centralizing all interactions with the Bring! API.
     - **`schemaShared.ts`**: Defines common Zod schema parts (e.g., `listUuidParam`, `itemIdParam`, `itemNameParam`, `itemSpecificationParam`, `itemImagePathOrUrlParam`, `batchItemSchema`, `saveItemBatchParams`, `itemNamesArrayParam`) for reuse across tool schemas.
     - **`tools/`**: Contains modularized tool registration functions.
@@ -33,7 +35,7 @@ This document outlines key conventions, structures, and important points for wor
         - `userTools.ts`: Includes tools like `getAllUsersFromList`, `getUserSettings`, `getPendingInvitations`, and `getDefaultList`.
         - `catalogTools.ts`
 - **`tests/`**: Contains Jest test files (e.g., `*.spec.ts`).
-- **`.env`**: Used for storing Bring! API credentials (`MAIL`, `PW`). This file should not be committed to version control.
+- **`.env`**: Used for storing Bring! API credentials (`BRING_EMAIL`, `BRING_PASSWORD`; the legacy `MAIL`, `PW` still work). This file should not be committed to version control.
 - **`assets/`**: Contains static assets like images for the README.
 - **`eslint.config.js`**: ESLint configuration.
 - **`jest.config.js`**: Jest test runner configuration.
@@ -70,10 +72,10 @@ The following tools are registered and available through the MCP server:
 - **`loadTranslations`**: Load translations for the Bring! interface
 - **`loadCatalog`**: Load the Bring! item catalog
 
-## Tool Registration (`src/index.ts`)
+## Tool Registration (`src/registerTool.ts`)
 
-- A helper function `registerTool` is defined in `src/index.ts` to standardize tool registration.
-- **Overloads**: `registerTool` has overloads to support tools with Zod schemas and tools without arguments (schema is `undefined`).
+- A helper function `registerTool` is defined in `src/registerTool.ts` to standardize tool registration.
+- **Schemas**: every tool passes a Zod `inputSchema` (use `noArgsSchema` for tools without arguments), an `outputSchema` from `src/toolSchemas.ts`, a `title` and `annotations`.
 - **Parameters**:
     - `server`: The `McpServer` instance.
     - `bc`: The `BringClient` instance.
@@ -118,9 +120,9 @@ Common Zod schema definitions for reuse across tools:
 
 ## Environment Variables & Initialization
 
-- **Credentials**: `MAIL` and `PW` for Bring! authentication are required.
+- **Credentials**: `BRING_EMAIL` and `BRING_PASSWORD` (or the legacy `MAIL` and `PW`) are required.
 - **`.env` file**: The primary way to provide credentials for local development.
-- **Initialization Order**: In `src/index.ts`, the `main()` function first checks for the presence of `MAIL` and `PW` environment variables. If they are missing, the application exits. `BringClient` instantiation (which sets up automatic login but does not log in immediately) and all tool registrations occur *after* this check.
+- **Initialization Order**: `src/index.ts` resolves the credentials first and exits with an error if they are missing. `BringClient` (which logs in lazily on the first API call) and all tool registrations are created only after that check.
 
 ## Special Tool Behaviors
 

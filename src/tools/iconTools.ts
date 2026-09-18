@@ -1,7 +1,7 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { BringClient } from '../bringClient.js';
-import { registerTool } from '../index.js';
+import type { BringService } from '../bringClient.js';
+import { registerTool } from '../registerTool.js';
 import {
   listUuidParam,
   itemNameParam,
@@ -15,6 +15,20 @@ import {
   renameItemParams,
   apiRawParams,
 } from '../schemaShared.js';
+import { MUTATING_TOOL_ANNOTATIONS, READ_ONLY_TOOL_ANNOTATIONS } from '../toolAnnotations.js';
+import {
+  apiRawOutputSchema,
+  batchUpdateOutputSchema,
+  findCatalogItemOutputSchema,
+  findCatalogSectionOutputSchema,
+  listItemCustomisationsOutputSchema,
+  removeItemCustomisationOutputSchema,
+  renameItemOutputSchema,
+  saveItemResolvedOutputSchema,
+  setItemIconOutputSchema,
+  setItemSectionOutputSchema,
+  setListArticleLanguageOutputSchema,
+} from '../toolSchemas.js';
 
 /**
  * Tools built on Bring's catalog and item-detail endpoints.
@@ -26,12 +40,13 @@ import {
  * phone, with the right icon and aisle. An item stored as free text
  * ("Apples / Maçãs") shows up verbatim, with no icon, forever.
  */
-export function registerIconTools(server: McpServer, bc: BringClient) {
+export function registerIconTools(server: McpServer, bc: BringService) {
   const findCatalogItemParams = z.object({ ...catalogQueryParam, ...searchLimitParam });
   registerTool({
     server,
     bc,
     name: 'findCatalogItem',
+    title: 'Find Catalog Item',
     description:
       "Search Bring's item catalog in any supported language and return canonical item ids, ranked by " +
       'score. Use this to discover the correct itemId before calling saveItemResolved or setItemIcon. ' +
@@ -40,9 +55,10 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
       'marked "nearest": true with score 0 - these are the closest catalog entries by spelling, are ' +
       'never attachable, and mean "no real match, here is the neighbourhood". Do not keep guessing ' +
       'new spellings against them; ask the user which they meant, or say you could not find it.',
-    schemaShape: findCatalogItemParams.shape,
-    actionFn: async (args: z.infer<typeof findCatalogItemParams>, bc: BringClient) =>
-      bc.findCatalogItem(args.query, args.limit ?? 5),
+    inputSchema: findCatalogItemParams,
+    outputSchema: findCatalogItemOutputSchema,
+    actionFn: async (args, bc) => ({ matches: await bc.findCatalogItem(args.query, args.limit ?? 5) }),
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     failureMessage: 'Failed to search the catalog',
   });
 
@@ -51,10 +67,12 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'findCatalogSection',
+    title: 'Find Catalog Section',
     description: "Search Bring's list sections (aisles) in any supported language and return canonical section ids.",
-    schemaShape: findCatalogSectionParams.shape,
-    actionFn: async (args: z.infer<typeof findCatalogSectionParams>, bc: BringClient) =>
-      bc.findCatalogSection(args.query, args.limit ?? 5),
+    inputSchema: findCatalogSectionParams,
+    outputSchema: findCatalogSectionOutputSchema,
+    actionFn: async (args, bc) => ({ matches: await bc.findCatalogSection(args.query, args.limit ?? 5) }),
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     failureMessage: 'Failed to search catalog sections',
   });
 
@@ -67,21 +85,17 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'saveItemResolved',
+    title: 'Add Item Resolved to the Catalog',
     description:
       'Add an item to a list, storing it as a catalog item when one matches so it displays in the ' +
       "list's own language with the correct icon and aisle. Prefer this over saveItem: " +
       'saveItemResolved("maçãs") stores `Äpfel`, which a Portuguese client shows as "Maçãs" with an ' +
       'apple icon. Falls back to storing the text verbatim when no catalog item matches.',
-    schemaShape: saveItemResolvedParams.shape,
-    actionFn: async (args: z.infer<typeof saveItemResolvedParams>, bc: BringClient) =>
-      bc.saveItemResolved(args.listUuid, args.query, args.specification),
-    transformResult: (result: {
-      storedAs: string;
-      resolved: { itemId: string } | null;
-      mode: 'canonical' | 'text-with-icon' | 'text-only';
-      iconError?: string;
-      reusedExistingName?: string;
-    }) => {
+    inputSchema: saveItemResolvedParams,
+    outputSchema: saveItemResolvedOutputSchema,
+    actionFn: async (args, bc) => bc.saveItemResolved(args.listUuid, args.query, args.specification),
+    annotations: MUTATING_TOOL_ANNOTATIONS,
+    formatText: (result) => {
       const text = result.iconError
         ? `Saved as "${result.storedAs}" - the item IS on the list - but attaching the ` +
           `"${result.resolved?.itemId}" icon failed: ${result.iconError} ` +
@@ -95,7 +109,7 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
               ? `Saved as "${result.storedAs}" (kept verbatim) and given the icon of "${result.resolved?.itemId}".`
               : `Saved as "${result.storedAs}". No catalog match (or an ambiguous one), so it has no icon. ` +
                 `Use findCatalogItem to search, then setItemIcon to give it one.`;
-      return { content: [{ type: 'text' as const, text }] };
+      return text;
     },
     failureMessage: 'Failed to save item',
   });
@@ -105,22 +119,18 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'setItemIcon',
+    title: 'Set Item Icon',
     description:
       'Give an existing list item an icon. Use for custom items that are not in the catalog ' +
       '(e.g. "Escova De Dentes Colgate Maquina"). The icon may be a canonical itemId or a phrase in ' +
       'any supported language; it is resolved against the catalog. Creates the item detail record if ' +
       'the item does not have one yet.',
-    schemaShape: setItemIconParams.shape,
-    actionFn: async (args: z.infer<typeof setItemIconParams>, bc: BringClient) =>
-      bc.setItemIcon(args.listUuid, args.itemName, args.icon),
-    transformResult: (result: { detail: { itemId: string }; resolvedIcon: { itemId: string } }) => ({
-      content: [
-        {
-          type: 'text' as const,
-          text: `"${result.detail.itemId}" now uses the icon of catalog item "${result.resolvedIcon.itemId}".`,
-        },
-      ],
-    }),
+    inputSchema: setItemIconParams,
+    outputSchema: setItemIconOutputSchema,
+    actionFn: async (args, bc) => bc.setItemIcon(args.listUuid, args.itemName, args.icon),
+    annotations: MUTATING_TOOL_ANNOTATIONS,
+    formatText: (result) =>
+      `"${result.detail.itemId}" now uses the icon of catalog item "${result.resolvedIcon.itemId}".`,
     failureMessage: 'Failed to set item icon',
   });
 
@@ -129,20 +139,15 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'setItemSection',
+    title: 'Set Item Section',
     description:
       'Move a list item into a different section (aisle). Section may be a canonical sectionId or a ' +
       'phrase in any supported language. Creates the item detail record if needed.',
-    schemaShape: setItemSectionParams.shape,
-    actionFn: async (args: z.infer<typeof setItemSectionParams>, bc: BringClient) =>
-      bc.setItemSection(args.listUuid, args.itemName, args.section),
-    transformResult: (result: { detail: { itemId: string }; resolvedSection: { sectionId: string } }) => ({
-      content: [
-        {
-          type: 'text' as const,
-          text: `"${result.detail.itemId}" moved to section "${result.resolvedSection.sectionId}".`,
-        },
-      ],
-    }),
+    inputSchema: setItemSectionParams,
+    outputSchema: setItemSectionOutputSchema,
+    actionFn: async (args, bc) => bc.setItemSection(args.listUuid, args.itemName, args.section),
+    annotations: MUTATING_TOOL_ANNOTATIONS,
+    formatText: (result) => `"${result.detail.itemId}" moved to section "${result.resolvedSection.sectionId}".`,
     failureMessage: 'Failed to set item section',
   });
 
@@ -151,19 +156,14 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'removeItemCustomisation',
+    title: 'Remove Item Customisation',
     description:
       "Delete an item's detail record, removing its custom icon and section. The item itself stays " + 'on the list.',
-    schemaShape: removeItemIconParams.shape,
-    actionFn: async (args: z.infer<typeof removeItemIconParams>, bc: BringClient) =>
-      bc.removeItemDetail(args.listUuid, args.itemName),
-    transformResult: (removed: boolean) => ({
-      content: [
-        {
-          type: 'text' as const,
-          text: removed ? 'Customisation removed.' : 'That item had no customisation to remove.',
-        },
-      ],
-    }),
+    inputSchema: removeItemIconParams,
+    outputSchema: removeItemCustomisationOutputSchema,
+    actionFn: async (args, bc) => ({ removed: await bc.removeItemDetail(args.listUuid, args.itemName) }),
+    annotations: MUTATING_TOOL_ANNOTATIONS,
+    formatText: (result) => (result.removed ? 'Customisation removed.' : 'That item had no customisation to remove.'),
     failureMessage: 'Failed to remove item customisation',
   });
 
@@ -172,13 +172,15 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'listItemCustomisations',
+    title: 'List Item Customisations',
     description:
       'List every item on a list that has a custom icon or section, with the icon and section names ' +
-      'translated into a readable language (default pt-BR). Raw getItemsDetails returns German ' +
+      'translated into a readable language (default: BRING_MCP_DESCRIBE_LOCALE, else the first configured non-German catalog locale). Raw getItemsDetails returns German ' +
       'canonical ids, which are hard to read.',
-    schemaShape: listItemIconsParams.shape,
-    actionFn: async (args: z.infer<typeof listItemIconsParams>, bc: BringClient) =>
-      bc.describeItemDetails(args.listUuid, args.locale),
+    inputSchema: listItemIconsParams,
+    outputSchema: listItemCustomisationsOutputSchema,
+    actionFn: async (args, bc) => ({ customisations: await bc.describeItemDetails(args.listUuid, args.locale) }),
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     failureMessage: 'Failed to list item customisations',
   });
 
@@ -187,6 +189,7 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'batchUpdateItems',
+    title: 'Batch Update Items',
     description:
       'Apply several list changes in one call. Each change has an operation: TO_PURCHASE (add / move ' +
       'to buy), TO_RECENTLY (mark bought), REMOVE. Items are addressed by NAME and the name must match ' +
@@ -194,8 +197,10 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
       'match is a no-op. An optional uuid may be given on TO_PURCHASE to create an item with a known ' +
       'identity; it is ignored for TO_RECENTLY and REMOVE, which Bring only accepts by name. ' +
       'Applied one at a time and not atomic: a failure part-way leaves earlier changes applied.',
-    schemaShape: batchUpdateSchema.shape,
-    actionFn: async (args: z.infer<typeof batchUpdateSchema>, bc: BringClient) =>
+    inputSchema: batchUpdateSchema,
+    outputSchema: batchUpdateOutputSchema,
+    annotations: MUTATING_TOOL_ANNOTATIONS,
+    actionFn: async (args, bc) =>
       bc.batchUpdateList(
         args.listUuid,
         args.changes.map((c) => ({
@@ -209,18 +214,11 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
           operation: c.operation,
         })),
       ),
-    transformResult: (result: { applied: string[]; notFound: string[] }) => ({
-      content: [
-        {
-          type: 'text' as const,
-          text:
-            (result.applied.length ? `Applied: ${result.applied.join(', ')}.` : 'Nothing was applied.') +
-            (result.notFound.length
-              ? ` NOT FOUND, skipped (check exact names with getItems): ${result.notFound.join(', ')}.`
-              : ''),
-        },
-      ],
-    }),
+    formatText: (result) =>
+      (result.applied.length ? `Applied: ${result.applied.join(', ')}.` : 'Nothing was applied.') +
+      (result.notFound.length
+        ? ` NOT FOUND, skipped (check exact names with getItems): ${result.notFound.join(', ')}.`
+        : ''),
     failureMessage: 'Failed to apply batch update',
   });
 
@@ -229,19 +227,16 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'renameItem',
+    title: 'Rename Item',
     description:
       'Rename an item on a list, carrying its custom icon and section across. Detail records are keyed ' +
       'by item name, so renaming with saveItem/removeItem would silently lose the icon.',
-    schemaShape: renameSchema.shape,
-    actionFn: async (args: z.infer<typeof renameSchema>, bc: BringClient) =>
+    inputSchema: renameSchema,
+    outputSchema: renameItemOutputSchema,
+    actionFn: async (args, bc) =>
       bc.renameItem(args.listUuid, args.fromName, args.toName, args.specification ?? undefined),
-    transformResult: (result: {
-      movedDetail: boolean;
-      stayedInRecently: boolean;
-      specificationCarried: string;
-      lostAutomaticIcon: boolean;
-      lostImage: boolean;
-    }) => {
+    annotations: MUTATING_TOOL_ANNOTATIONS,
+    formatText: (result) => {
       const parts = [
         result.movedDetail
           ? 'Item renamed; its custom icon and section were carried over.'
@@ -257,7 +252,7 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
         );
       }
       if (result.lostImage) parts.push('WARNING: the item had a photo, which could not be carried over.');
-      return { content: [{ type: 'text' as const, text: parts.join(' ') }] };
+      return parts.join(' ');
     },
     failureMessage: 'Failed to rename item',
   });
@@ -270,16 +265,19 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
     server,
     bc,
     name: 'setListArticleLanguage',
+    title: 'Set List Article Language',
     description:
       'Set the article language for a list, which decides how catalog items are displayed and which ' +
       'names auto-match. Note Bring has pt-BR but no pt-PT. Clients fall back to the device locale ' +
       'when no value is stored, so an unset list is not necessarily German.',
-    schemaShape: setLanguageParams.shape,
-    actionFn: async (args: z.infer<typeof setLanguageParams>, bc: BringClient) =>
-      bc.setListArticleLanguage(args.listUuid, args.locale),
-    transformResult: () => ({
-      content: [{ type: 'text' as const, text: 'List article language updated.' }],
-    }),
+    inputSchema: setLanguageParams,
+    outputSchema: setListArticleLanguageOutputSchema,
+    actionFn: async (args, bc) => {
+      await bc.setListArticleLanguage(args.listUuid, args.locale);
+      return { success: true as const, listUuid: args.listUuid, locale: args.locale };
+    },
+    annotations: MUTATING_TOOL_ANNOTATIONS,
+    formatText: () => 'List article language updated.',
     failureMessage: 'Failed to set list article language',
   });
 
@@ -291,13 +289,17 @@ export function registerIconTools(server: McpServer, bc: BringClient) {
       server,
       bc,
       name: 'bringApiRaw',
+      title: 'Raw Bring! API Request',
       description:
         'Escape hatch: send an arbitrary authenticated request to the Bring! API. Path is relative to ' +
         'https://api.getbring.com/rest/ (e.g. "v2/bringlistitemdetails/<uuid>"). Note the item-detail ' +
         'collection accepts only multipart, its sub-resources only form. Enabled by BRING_MCP_RAW=1.',
-      schemaShape: apiRawSchema.shape,
-      actionFn: async (args: z.infer<typeof apiRawSchema>, bc: BringClient) =>
-        bc.apiRaw(args.method, args.path, args.encoding ?? 'none', args.body),
+      inputSchema: apiRawSchema,
+      outputSchema: apiRawOutputSchema,
+      actionFn: async (args, bc) => ({
+        response: await bc.apiRaw(args.method, args.path, args.encoding ?? 'none', args.body),
+      }),
+      annotations: { ...MUTATING_TOOL_ANNOTATIONS, idempotentHint: false },
       failureMessage: 'Raw API call failed',
     });
   }

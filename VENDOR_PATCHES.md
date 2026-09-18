@@ -82,12 +82,14 @@ by probing against a scratch list.
 | `src/bringClient.ts`                            | added catalog, item-detail, batch and settings methods; locale validation on `loadTranslations`/`loadCatalog`. Existing methods untouched |
 | `src/tools/iconTools.ts`                        | **new** — 10 tools, plus `bringApiRaw` behind `BRING_MCP_RAW=1`                                                                           |
 | `src/schemaShared.ts`                           | added zod params for the above                                                                                                            |
-| `src/index.ts`                                  | registers `registerIconTools`                                                                                                             |
+| `src/server.ts`, `src/toolSchemas.ts`           | registers `registerIconTools`; output schemas for the new tools                                                                           |
+| `src/loadEnv.ts`                                | **new** — finds `.env` next to the install, not only in the working directory                                                             |
 | `tests/catalog.spec.ts`                         | **new** — resolver unit tests incl. the wrong-match regression                                                                            |
 | `tests/iconTools.spec.ts`                       | **new** — tool registration and delegation                                                                                                |
 | `tests/helpers.ts`, `tests/integration.spec.ts` | extended for the new tools                                                                                                                |
 
-The original 16 tools are unchanged in behaviour.
+The original 16 tools behave as upstream's, with two deliberate differences: `deleteMultipleItemsFromList`
+reports names it could not find, and `getDefaultList` skips a stored default whose list no longer exists.
 
 ## On matching
 

@@ -70,7 +70,7 @@ const ICON_MATCH_SCORE = 50;
 const NULL_LOCATION = { accuracy: '0.0', altitude: '0.0', latitude: '0.0', longitude: '0.0' };
 
 export class BringClient {
-  private bring = new Bring({ mail: process.env.MAIL!, password: process.env.PW! });
+  private bring: Bring;
   private isLoggedIn = false;
   private tokenExpiresAt: Date | undefined;
   /**
@@ -81,6 +81,16 @@ export class BringClient {
    * a Map; only the cache itself was not.
    */
   private catalogCache = new Map<string, { at: number; catalog: Catalog }>();
+
+  constructor(
+    email = process.env.BRING_EMAIL ?? process.env.MAIL,
+    password = process.env.BRING_PASSWORD ?? process.env.PW,
+  ) {
+    if (!email || !password) {
+      throw new Error('Missing BRING_EMAIL or BRING_PASSWORD environment variables.');
+    }
+    this.bring = new Bring({ mail: email, password });
+  }
 
   private async _login() {
     try {
@@ -1218,3 +1228,34 @@ export class BringClient {
     return { status: res.status, data: res.data, text: res.text.slice(0, 2000) };
   }
 }
+
+/** Everything the tool layer is allowed to call - lets tests hand in a plain mock. */
+export type BringService = Pick<
+  BringClient,
+  | 'loadLists'
+  | 'getItems'
+  | 'getItemsDetails'
+  | 'saveItem'
+  | 'saveItemBatch'
+  | 'removeItem'
+  | 'moveToRecentList'
+  | 'saveItemImage'
+  | 'removeItemImage'
+  | 'getAllUsersFromList'
+  | 'getUserSettings'
+  | 'loadTranslations'
+  | 'loadCatalog'
+  | 'getPendingInvitations'
+  | 'deleteMultipleItemsFromList'
+  | 'findCatalogItem'
+  | 'findCatalogSection'
+  | 'saveItemResolved'
+  | 'setItemIcon'
+  | 'setItemSection'
+  | 'removeItemDetail'
+  | 'describeItemDetails'
+  | 'batchUpdateList'
+  | 'renameItem'
+  | 'setListArticleLanguage'
+  | 'apiRaw'
+>;

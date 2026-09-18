@@ -16,17 +16,27 @@ project guidelines extracted from the README and the Cursor rules.
 
 - Source code resides in `src/` with tools grouped in `src/tools/`.
 - Tests are located in `tests/` and use Jest.
-- The MCP server entry point is `src/index.ts`.
+- The entry point is `src/index.ts`: it loads `.env` (`src/loadEnv.ts`), resolves
+  credentials and starts the stdio transport. `src/server.ts` builds the MCP server
+  and registers every tool group.
+- The Bring! client is `src/bringClient.ts`; raw HTTP for endpoints the
+  `bring-shopping` package lacks is `src/bringHttp.ts`; the catalog matcher is
+  `src/catalog.ts`.
 - Do not commit sensitive information such as `.env` files containing Bring!
   credentials.
 
 ## Tool Registration and Integration Tests
 
-- Tools are registered via helper functions in `src/index.ts` and files under
-  `src/tools/`.
-- Integration tests expect **exactly 16** tools to be registered. If you add or
-  remove tools, update the `expectedToolNames` array in
-  `tests/integration.spec.ts`.
+- Tools are registered with `registerTool` from `src/registerTool.ts`. Every tool
+  must declare a `title`, an `inputSchema`, an `outputSchema` (in
+  `src/toolSchemas.ts`) and `annotations` (`src/toolAnnotations.ts`). The MCP SDK
+  validates every result against the output schema at runtime, so a schema that is
+  stricter than what the live Bring! API returns turns a working call into an error.
+- `formatText` sets the human-readable text returned alongside the structured result.
+- Integration tests expect **exactly 26** tools to be registered (`bringApiRaw` only
+  appears with `BRING_MCP_RAW=1`). If you add or remove tools, update
+  `expectedToolNames` in `tests/integration.spec.ts` and the count in
+  `tests/protocol.spec.ts`.
 
 ## Coding Conventions
 
