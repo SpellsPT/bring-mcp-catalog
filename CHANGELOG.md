@@ -29,6 +29,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **`getAllUsersFromList` failed outright when any list member had no profile photo.**
   Bring! omits `photoPath` for such members and the strict v2 output schema rejected the
   whole response. Fields Bring! may leave out are now optional.
+  Contributed upstream as
+  [florianwittkamp/bring-mcp#71](https://github.com/florianwittkamp/bring-mcp/pull/71) (merged
+  2026-09-23), where only `photoPath` is loosened — the one field observed missing on a real list.
 - **README install instructions**: the recommended `npx bring-mcp-catalog` setup could
   never work — the package is not published to npm. Replaced with a clone-and-build install.
 
