@@ -34,7 +34,7 @@ export function registerCatalogTools(server: McpServer, bc: BringService) {
     bc,
     name: 'loadCatalog',
     title: 'Load Bring! Catalog',
-    description: 'Load the Bring! catalog for a specific locale. This contains standard items.',
+    description: "Load Bring's standard item catalog for one locale. It contains the standard items.",
     inputSchema: loadCatalogParams,
     outputSchema: catalogOutputSchema,
     actionFn: async (args, bc) => catalogOutputSchema.parse(await bc.loadCatalog(args.locale)),

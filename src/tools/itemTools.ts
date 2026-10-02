@@ -48,7 +48,7 @@ export function registerItemTools(server: McpServer, bc: BringService) {
     name: 'getItemsDetails',
     title: 'Get Shopping Item Details',
     description:
-      'Get the item detail records of a shopping list (custom icon, section and image per item name). ' +
+      "Get each list item's custom icon, section and image. These are its detail records, per item name. " +
       'Icon and section values are canonical German ids; listItemCustomisations shows them translated.',
     inputSchema: getItemsDetailsParams,
     outputSchema: getItemsDetailsOutputSchema,
@@ -133,7 +133,7 @@ export function registerItemTools(server: McpServer, bc: BringService) {
     bc,
     name: 'moveToRecentList',
     title: 'Move Item to Recently Used',
-    description: 'Move an item from a shopping list to the recently used items list.',
+    description: 'Move an item to the recently used items of its list.',
     inputSchema: moveToRecentListParams,
     outputSchema: itemMutationOutputSchema,
     actionFn: async (args, bc) => {
@@ -202,7 +202,7 @@ export function registerItemTools(server: McpServer, bc: BringService) {
     name: 'deleteMultipleItemsFromList',
     title: 'Delete Multiple Shopping Items',
     description:
-      'Delete multiple items from a specific shopping list by their names. Names must match the ' +
+      'Delete several items from a shopping list by name. Names must match the ' +
       'stored names exactly; the result reports which names were removed and which were not found.',
     inputSchema: deleteMultipleItemsParams,
     outputSchema: deleteMultipleItemsOutputSchema,

@@ -83,7 +83,7 @@ export function registerUserTools(server: McpServer, bc: BringService) {
     bc,
     name: 'getPendingInvitations',
     title: 'Get Pending Shopping List Invitations',
-    description: 'Get any pending invitations for the authenticated user to join shopping lists.',
+    description: "Get pending invitations to join shopping lists. They are the authenticated user's invitations.",
     inputSchema: noArgsSchema,
     outputSchema: getPendingInvitationsOutputSchema,
     actionFn: async (_args, bc) => getPendingInvitationsOutputSchema.parse(await bc.getPendingInvitations()),
@@ -97,7 +97,7 @@ export function registerUserTools(server: McpServer, bc: BringService) {
     name: 'getDefaultList',
     title: 'Get Default Shopping List',
     description:
-      'Get the UUID of the default shopping list for the authenticated user. Use this if the user does not ask for a special list.',
+      "Get the UUID of the user's default shopping list. Use this if the user does not ask for a special list.",
     inputSchema: noArgsSchema,
     outputSchema: getDefaultListOutputSchema,
     actionFn: async (_args, bc) => {

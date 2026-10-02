@@ -48,7 +48,8 @@ export function registerIconTools(server: McpServer, bc: BringService) {
     name: 'findCatalogItem',
     title: 'Find Catalog Item',
     description:
-      "Search Bring's item catalog in any supported language and return canonical item ids, ranked by " +
+      "Find an item's canonical catalog id, in any language. Searches Bring's item catalog in any " +
+      'supported language and returns canonical item ids, ranked by ' +
       'score. Use this to discover the correct itemId before calling saveItemResolved or setItemIcon. ' +
       'Scores below 50 are weak hints and are never applied automatically; only a confident, untied ' +
       'match is ever auto-attached by the other tools. If NOTHING scores, you get up to 3 entries ' +
@@ -68,7 +69,8 @@ export function registerIconTools(server: McpServer, bc: BringService) {
     bc,
     name: 'findCatalogSection',
     title: 'Find Catalog Section',
-    description: "Search Bring's list sections (aisles) in any supported language and return canonical section ids.",
+    description:
+      "Find a list section (aisle) id, in any language. Searches Bring's list sections and returns canonical section ids.",
     inputSchema: findCatalogSectionParams,
     outputSchema: findCatalogSectionOutputSchema,
     actionFn: async (args, bc) => ({ matches: await bc.findCatalogSection(args.query, args.limit ?? 5) }),
@@ -87,8 +89,8 @@ export function registerIconTools(server: McpServer, bc: BringService) {
     name: 'saveItemResolved',
     title: 'Add Item Resolved to the Catalog',
     description:
-      'Add an item to a list, storing it as a catalog item when one matches so it displays in the ' +
-      "list's own language with the correct icon and aisle. Prefer this over saveItem: " +
+      'Add an item to a list with the right icon and aisle. It is stored as a catalog item when one ' +
+      "matches, so it displays in the list's own language. Prefer this over saveItem: " +
       'saveItemResolved("maçãs") stores `Äpfel`, which a Portuguese client shows as "Maçãs" with an ' +
       'apple icon. Falls back to storing the text verbatim when no catalog item matches.',
     inputSchema: saveItemResolvedParams,
@@ -158,7 +160,8 @@ export function registerIconTools(server: McpServer, bc: BringService) {
     name: 'removeItemCustomisation',
     title: 'Remove Item Customisation',
     description:
-      "Delete an item's detail record, removing its custom icon and section. The item itself stays " + 'on the list.',
+      "Remove an item's custom icon and section. It deletes the item's detail record; the item itself " +
+      'stays on the list.',
     inputSchema: removeItemIconParams,
     outputSchema: removeItemCustomisationOutputSchema,
     actionFn: async (args, bc) => ({ removed: await bc.removeItemDetail(args.listUuid, args.itemName) }),
@@ -174,7 +177,8 @@ export function registerIconTools(server: McpServer, bc: BringService) {
     name: 'listItemCustomisations',
     title: 'List Item Customisations',
     description:
-      'List every item on a list that has a custom icon or section, with the icon and section names ' +
+      'List items with a custom icon or section, translated. Shows every such item on a list, with the ' +
+      'icon and section names ' +
       'translated into a readable language (default: BRING_MCP_DESCRIBE_LOCALE, else the first configured non-German catalog locale). Raw getItemsDetails returns German ' +
       'canonical ids, which are hard to read.',
     inputSchema: listItemIconsParams,
@@ -229,7 +233,7 @@ export function registerIconTools(server: McpServer, bc: BringService) {
     name: 'renameItem',
     title: 'Rename Item',
     description:
-      'Rename an item on a list, carrying its custom icon and section across. Detail records are keyed ' +
+      'Rename a list item, keeping its custom icon and section. Detail records are keyed ' +
       'by item name, so renaming with saveItem/removeItem would silently lose the icon.',
     inputSchema: renameSchema,
     outputSchema: renameItemOutputSchema,
@@ -267,7 +271,7 @@ export function registerIconTools(server: McpServer, bc: BringService) {
     name: 'setListArticleLanguage',
     title: 'Set List Article Language',
     description:
-      'Set the article language for a list, which decides how catalog items are displayed and which ' +
+      "Set a list's language for catalog item names. It decides how catalog items are displayed and which " +
       'names auto-match. Note Bring has pt-BR but no pt-PT. Clients fall back to the device locale ' +
       'when no value is stored, so an unset list is not necessarily German.',
     inputSchema: setLanguageParams,
